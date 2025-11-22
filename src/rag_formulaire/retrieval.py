@@ -21,7 +21,7 @@ def _bm25_search(index: IndexStore, query: str, top_k: int) -> List[Tuple[str, f
 
 
 def _vector_search(index: IndexStore, query: str, top_k: int) -> List[Tuple[str, float]]:
-    emb_backend = EmbeddingBackend()
+    emb_backend = index.embedding_backend or EmbeddingBackend()
     query_vec = emb_backend.encode([query])[0]
     results = index.chroma.query(query_embeddings=[query_vec], n_results=top_k)
     ids = results.get("ids", [[]])[0]

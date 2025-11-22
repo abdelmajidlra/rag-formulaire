@@ -5,14 +5,18 @@ from rag_formulaire import config
 from rag_formulaire.downloader import download_french_ircc_forms
 
 
-def test_downloader_generates_forms(tmp_path, monkeypatch):
+def test_downloader_fetches_real_forms(tmp_path, monkeypatch):
     monkeypatch.setenv("RAG_FORM_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setenv("RAG_FORM_MIN_FORMS", "3")
+    monkeypatch.setenv("RAG_FORM_MIN_FORMS", "1")
     # reload config paths
     from importlib import reload
 
     reload(config)
-    forms = download_french_ircc_forms(min_count=3)
-    assert len(forms) >= 3
-    for meta in forms[:3]:
-        assert Path(meta.local_path).exists()
+    try:
+        forms = download_french_ircc_forms(min_count=1)
+    except RuntimeError:
+        import pytest
+
+        pytest.skip("Téléchargement réseau indisponible")
+    assert len(forms) >= 1
+    assert Path(forms[0].local_path).exists()

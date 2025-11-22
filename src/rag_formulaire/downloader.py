@@ -8,8 +8,6 @@ from typing import List
 
 import requests
 from bs4 import BeautifulSoup
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
 from tqdm import tqdm
 
 from . import config
@@ -44,8 +42,7 @@ def _save_manifest(entries: List[FormMetadata]):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def _extract_pdf_links(html: str) -> List[tuple[str, str]]:
-    soup = BeautifulSoup(html, "html.parser")
+def _extract_pdf_links_from_soup(soup: BeautifulSoup) -> List[tuple[str, str]]:
     links = []
     for a in soup.find_all("a", href=True):
         href = a["href"]
@@ -53,6 +50,17 @@ def _extract_pdf_links(html: str) -> List[tuple[str, str]]:
         if href.lower().endswith(".pdf") and "imm" in href.lower():
             links.append((text or href, requests.compat.urljoin(ALLOWED_DOMAIN, href)))
     return links
+
+
+def _extract_form_pages(soup: BeautifulSoup) -> List[str]:
+    form_pages = []
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        if not href.startswith("http"):
+            href = requests.compat.urljoin(ALLOWED_DOMAIN, href)
+        if "imm" in href.lower() and href.lower().endswith(".html") and "immigration-refugies-citoyennete" in href:
+            form_pages.append(href)
+    return list(dict.fromkeys(form_pages))
 
 
 def _download_pdf(url: str, target: Path) -> bool:
@@ -66,42 +74,6 @@ def _download_pdf(url: str, target: Path) -> bool:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Echec téléchargement %s: %s", url, exc)
     return False
-
-
-def _synthetic_pdf(path: Path, form_code: str, title: str, idx: int):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    c = canvas.Canvas(str(path), pagesize=letter)
-    text = c.beginText(40, 750)
-    text.textLine(f"Formulaire {form_code} - {title}")
-    text.textLine("Renseignements personnels")
-    text.textLine("Nom complet: __________________")
-    text.textLine("Date de naissance: __________________")
-    text.textLine("Objet: démonstration hors ligne du pipeline RAG.")
-    text.textLine(f"Section synthétique {idx}")
-    c.drawText(text)
-    c.showPage()
-    c.save()
-
-
-def _generate_synthetic_forms(target_count: int) -> List[FormMetadata]:
-    entries: List[FormMetadata] = []
-    for i in range(target_count):
-        code = f"IMM {5400 + i}"
-        title = f"Formulaire fictif numéro {i+1}"
-        filename = f"synthetic_{i+1:03d}.pdf"
-        local_path = config.RAW_FORMS_DIR / filename
-        _synthetic_pdf(local_path, code, title, i + 1)
-        entries.append(
-            FormMetadata(
-                form_code=code,
-                title_fr=title,
-                pdf_url="synthetic",
-                local_path=local_path,
-                category="Synthétique",
-                last_updated="N/A",
-            )
-        )
-    return entries
 
 
 def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadata]:
@@ -134,16 +106,33 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
 
     # Attempt crawl
     try:
-        response = requests.get(INDEX_URL, timeout=20)
+        response = requests.get(INDEX_URL, timeout=30)
         response.raise_for_status()
-        links = _extract_pdf_links(response.text)
-        logger.info("Liens PDF détectés: %s", len(links))
-        for idx, (text, url) in enumerate(tqdm(links, desc="Téléchargement")):
+        soup = BeautifulSoup(response.text, "html.parser")
+        pdf_links = _extract_pdf_links_from_soup(soup)
+        form_pages = _extract_form_pages(soup)
+
+        # Enrichir en parcourant les pages individuelles
+        for page_url in tqdm(form_pages, desc="Exploration des pages de formulaires"):
+            try:
+                page_resp = requests.get(page_url, timeout=20)
+                if page_resp.status_code == 200:
+                    page_soup = BeautifulSoup(page_resp.text, "html.parser")
+                    pdf_links.extend(_extract_pdf_links_from_soup(page_soup))
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("Ignoré %s: %s", page_url, exc)
+
+        seen_urls = set()
+        logger.info("Liens PDF détectés après crawl: %s", len(pdf_links))
+        for idx, (text, url) in enumerate(tqdm(pdf_links, desc="Téléchargement")):
+            if url in seen_urls:
+                continue
+            seen_urls.add(url)
             form_code_match = re.search(r"(IMM|CIT)\s?-?\d{3,4}", text, re.IGNORECASE)
             form_code = form_code_match.group(0).upper().replace("  ", " ") if form_code_match else f"FORM-{idx}"
             title_fr = text
             local_path = config.RAW_FORMS_DIR / f"{form_code.replace(' ', '_')}.pdf"
-            if local_path.exists() and local_path.stat().st_size > 1024:
+            if local_path.exists() and local_path.stat().st_size > 2048:
                 logger.debug("Fichier déjà présent: %s", local_path)
             else:
                 success = _download_pdf(url, local_path)
@@ -162,13 +151,13 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
             if len(entries) >= min_target:
                 break
     except Exception as exc:  # noqa: BLE001
-        logger.warning("Echec du crawl en ligne, utilisation de données synthétiques: %s", exc)
+        logger.warning("Echec du crawl en ligne: %s", exc)
 
-    # If still insufficient, generate synthetic
+    # Si le crawl n'atteint pas le quota minimal, on échoue explicitement
     if len(entries) < min_target:
-        remaining = min(min_target - len(entries), config.MAX_SYNTHETIC_FORMS)
-        logger.info("Génération de %s formulaires synthétiques pour atteindre %s", remaining, min_target)
-        entries.extend(_generate_synthetic_forms(remaining))
+        raise RuntimeError(
+            f"Seuls {len(entries)} formulaires téléchargés. Un minimum de {min_target} formulaires français est requis."
+        )
 
     _save_manifest(entries)
     return entries

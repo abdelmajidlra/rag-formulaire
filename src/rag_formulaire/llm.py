@@ -4,7 +4,8 @@ import logging
 from typing import List
 
 import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import BitsAndBytesConfig
 
 from . import config
 
@@ -16,24 +17,47 @@ class LocalLLM:
         self.model = None
         self.tokenizer = None
 
-        # 1) Détecter le GPU
+        # 1) Détecter le GPU ou basculer CPU
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info("Initialisation LLM sur device=%s", self.device)
+
+        # Préparer la config 4 bits si possible
+        quant_config = None
+        if self.device == "cuda" and config.GEN_LOAD_4BIT:
+            try:  # pragma: no cover - heavy dependency
+                quant_config = BitsAndBytesConfig(
+                    load_in_4bit=True,
+                    bnb_4bit_compute_dtype=torch.float16,
+                    bnb_4bit_use_double_quant=True,
+                    bnb_4bit_quant_type="nf4",
+                )
+                logger.info("Quantification 4 bits activée pour %s", config.GEN_MODEL_NAME)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Impossible d'activer la quantification 4 bits: %s", exc)
+                quant_config = None
 
         try:  # pragma: no cover - heavy dependency
             # 2) Charger le tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(config.GEN_MODEL_NAME)
 
             # 3) Charger le modèle de génération
-            # Variante A : FP16 sur GPU (si VRAM suffisante)
+            load_kwargs = {
+                "device_map": "auto" if self.device == "cuda" else None,
+                "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
+                "low_cpu_mem_usage": True,
+            }
+            if quant_config is not None:
+                load_kwargs["quantization_config"] = quant_config
+
             self.model = AutoModelForCausalLM.from_pretrained(
                 config.GEN_MODEL_NAME,
-                device_map="auto",          # répartit sur GPU/CPU, mais privilégie le GPU
-                torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
-                low_cpu_mem_usage=True,
+                **load_kwargs,
             )
 
-            logger.info("LLM chargé avec succès (%s)", config.GEN_MODEL_NAME)
+            if self.device != "cuda":
+                self.model = self.model.to(self.device)
+
+            logger.info("LLM Mistral chargé avec succès (%s)", config.GEN_MODEL_NAME)
 
         except Exception as exc:  # noqa: BLE001
             logger.warning(
@@ -43,7 +67,7 @@ class LocalLLM:
             self.tokenizer = None
 
         if self.model is None:
-            logger.info("Utilisation du générateur factice interne.")
+            logger.info("Utilisation du générateur factice interne (CPU pur).")
 
     # --- Génération principale -------------------------------------------------
     def generate(self, prompt: str, max_new_tokens: int = 256) -> str:

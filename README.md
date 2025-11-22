@@ -10,13 +10,15 @@ cd rag-formulaire
 pip install -e .
 ```
 
+> Le LLM par défaut est **Mistral-7B-Instruct** ; si un GPU Tesla/Colab est disponible, le chargement 4 bits est activé automatiquement. En l'absence de GPU ou de bitsandbytes, un mode CPU (ou un générateur factice) est utilisé pour rester exécutable.
+
 ## Construire l'index
 
 ```bash
 python -m rag_formulaire.ingest
 ```
 
-Le pipeline crée `data/forms_manifest.json`, télécharge au moins 100 formulaires IRCC en français (ou génère des échantillons de secours si le réseau n'est pas disponible), les parse puis construit :
+Le pipeline crée `data/forms_manifest.json`, télécharge automatiquement au moins 40 formulaires IRCC en français (aucun formulaire synthétique), les parse puis construit :
 - un index BM25 sérialisé dans `data/index/bm25/`
 - un magasin vectoriel Chroma dans `data/index/chroma/`
 
@@ -44,7 +46,7 @@ Dans la boucle interactive, tapez votre question (en français ou non). Les rép
 
 ## Limites
 
-- Dépend du téléchargement des formulaires IRCC ; en environnement sans réseau, des formulaires synthétiques sont générés pour démontrer le pipeline.
+- Dépend du téléchargement des formulaires IRCC ; sans accès réseau, l'ingestion échoue explicitement.
 - Le modèle LLM local est simulé si les poids ne sont pas disponibles, pour conserver un fonctionnement hors-ligne.
 
 ## Tests
