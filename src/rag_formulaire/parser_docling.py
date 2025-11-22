@@ -22,15 +22,19 @@ logger = logging.getLogger(__name__)
 
 def parse_pdf_to_docling(pdf_path: str):
     path = Path(pdf_path)
-    if _DOCLING_AVAILABLE:
-        converter = DocumentConverter()
-        return converter.convert(path)
-    # Fallback: simple object with pages text
-    pages = []
-    with pdfplumber.open(path) as pdf:
-        for page in pdf.pages:
-            pages.append({"text": page.extract_text() or ""})
-    return {"pages": pages}
+    try:
+        if _DOCLING_AVAILABLE:
+            converter = DocumentConverter()
+            return converter.convert(path)
+        # Fallback: simple object with pages text
+        pages = []
+        with pdfplumber.open(path) as pdf:
+            for page in pdf.pages:
+                pages.append({"text": page.extract_text() or ""})
+        return {"pages": pages}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Échec de lecture du PDF %s: %s", path, exc)
+        return {"pages": []}
 
 
 def _extract_sections(text: str) -> List[str]:
