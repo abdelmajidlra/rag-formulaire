@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import pickle
 from pathlib import Path
 from typing import List
@@ -19,21 +20,130 @@ from sklearn.feature_extraction.text import TfidfVectorizer
 from . import config
 from .data_models import FormChunk
 
+FRENCH_STOP_WORDS = [
+    "alors",
+    "au",
+    "aucuns",
+    "aussi",
+    "autre",
+    "avant",
+    "avec",
+    "avoir",
+    "bon",
+    "car",
+    "ce",
+    "cela",
+    "ces",
+    "ceux",
+    "chaque",
+    "ci",
+    "comme",
+    "comment",
+    "dans",
+    "des",
+    "du",
+    "elle",
+    "elles",
+    "en",
+    "encore",
+    "est",
+    "et",
+    "eu",
+    "fait",
+    "fois",
+    "font",
+    "hors",
+    "ici",
+    "il",
+    "ils",
+    "je",
+    "juste",
+    "la",
+    "le",
+    "les",
+    "leur",
+    "là",
+    "ma",
+    "mais",
+    "me",
+    "même",
+    "mes",
+    "mine",
+    "moins",
+    "mon",
+    "mot",
+    "ne",
+    "ni",
+    "nommés",
+    "notre",
+    "nous",
+    "nouveaux",
+    "ou",
+    "où",
+    "par",
+    "parce",
+    "pas",
+    "peut",
+    "peu",
+    "plupart",
+    "pour",
+    "pourquoi",
+    "quand",
+    "que",
+    "quel",
+    "quelle",
+    "quelles",
+    "quels",
+    "qui",
+    "sa",
+    "sans",
+    "ses",
+    "seulement",
+    "si",
+    "sien",
+    "son",
+    "sont",
+    "sous",
+    "soyez",
+    "sujet",
+    "sur",
+    "ta",
+    "tandis",
+    "tellement",
+    "tels",
+    "tes",
+    "ton",
+    "tous",
+    "tout",
+    "trop",
+    "très",
+    "tu",
+    "voient",
+    "vont",
+    "votre",
+    "vous",
+    "vu",
+]
 logger = logging.getLogger(__name__)
 
 
 class EmbeddingBackend:
-    def __init__(self):
+    def __init__(self, vectorizer: TfidfVectorizer | None = None):
+        self.vectorizer = vectorizer
+        self._fitted = vectorizer is not None
+        offline = os.getenv("HF_HUB_OFFLINE", "1").lower() in {"1", "true", "yes"}
         try:  # pragma: no cover - heavy dependency
-            self.model = SentenceTransformer(config.EMBEDDING_MODEL_NAME) if SentenceTransformer else None
-            self.vectorizer = None
+            self.model = (
+                SentenceTransformer(config.EMBEDDING_MODEL_NAME)
+                if (SentenceTransformer and vectorizer is None and not offline)
+                else None
+            )
         except Exception as exc:  # noqa: BLE001
             logger.warning("Chargement SentenceTransformer impossible (%s), fallback TF-IDF.", exc)
             self.model = None
-            self.vectorizer = TfidfVectorizer(stop_words="french")
-            self._fitted = False
-        if self.model is None:
-            self.vectorizer = self.vectorizer or TfidfVectorizer(stop_words="french")
+
+        if self.model is None and self.vectorizer is None:
+            self.vectorizer = TfidfVectorizer(stop_words=FRENCH_STOP_WORDS)
             self._fitted = False
 
     def encode(self, texts: List[str]):
@@ -46,16 +156,21 @@ class EmbeddingBackend:
 
 
 class IndexStore:
-    def __init__(self, bm25, bm25_corpus, chroma_collection, chunk_map: dict):
+    def __init__(self, bm25, bm25_corpus, chroma_collection, chunk_map: dict, embedding_backend=None):
         self.bm25 = bm25
         self.bm25_corpus = bm25_corpus
         self.chroma = chroma_collection
         self.chunk_map = chunk_map
+        self.embedding_backend = embedding_backend
 
 
 
 def _tokenize(text: str) -> List[str]:
     return [t for t in text.lower().split() if t.isalpha() or t.isalnum()]
+
+
+def _tfidf_path() -> Path:
+    return config.INDEX_DIR / "tfidf_vectorizer.pkl"
 
 
 def build_indexes(chunks: List[FormChunk]) -> IndexStore:
@@ -68,6 +183,14 @@ def build_indexes(chunks: List[FormChunk]) -> IndexStore:
 
     emb_backend = EmbeddingBackend()
     embeddings = emb_backend.encode(corpus)
+
+    tfidf_path = _tfidf_path()
+    tfidf_path.parent.mkdir(parents=True, exist_ok=True)
+    if emb_backend.model is None and emb_backend.vectorizer is not None:
+        with open(tfidf_path, "wb") as f:
+            pickle.dump(emb_backend.vectorizer, f)
+    elif tfidf_path.exists():
+        tfidf_path.unlink()
 
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     collection = client.get_or_create_collection("forms")
@@ -94,7 +217,13 @@ def build_indexes(chunks: List[FormChunk]) -> IndexStore:
     with open(config.BM25_DIR / "chunks.json", "w", encoding="utf-8") as f:
         json.dump({cid: c.__dict__ for cid, c in chunk_map.items()}, f, ensure_ascii=False)
 
-    return IndexStore(bm25=bm25, bm25_corpus=corpus, chroma_collection=collection, chunk_map=chunk_map)
+    return IndexStore(
+        bm25=bm25,
+        bm25_corpus=corpus,
+        chroma_collection=collection,
+        chunk_map=chunk_map,
+        embedding_backend=emb_backend,
+    )
 
 
 def load_indexes() -> IndexStore:
@@ -104,7 +233,21 @@ def load_indexes() -> IndexStore:
         raw_chunks = json.load(f)
     chunk_map = {cid: FormChunk(**data) for cid, data in raw_chunks.items()}
 
+    tfidf_path = _tfidf_path()
+    vectorizer = None
+    if tfidf_path.exists():
+        with open(tfidf_path, "rb") as f:
+            vectorizer = pickle.load(f)
+
+    emb_backend = EmbeddingBackend(vectorizer=vectorizer) if vectorizer else None
+
     client = chromadb.PersistentClient(path=str(config.CHROMA_DIR))
     collection = client.get_or_create_collection("forms")
 
-    return IndexStore(bm25=bm25_data["bm25"], bm25_corpus=bm25_data["corpus"], chroma_collection=collection, chunk_map=chunk_map)
+    return IndexStore(
+        bm25=bm25_data["bm25"],
+        bm25_corpus=bm25_data["corpus"],
+        chroma_collection=collection,
+        chunk_map=chunk_map,
+        embedding_backend=emb_backend,
+    )
