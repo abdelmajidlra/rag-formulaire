@@ -65,8 +65,8 @@ def run_cli():  # pragma: no cover - interactive
 
         evidence_texts = [f"[{c.base_chunk.form_code}] {c.base_chunk.section_title}: {c.base_chunk.content}" for c in reranked[: config.FINAL_EVIDENCE_K]]
         system_prompt = (
-            "Vous êtes un assistant spécialisé dans les formulaires IRCC. Répondez uniquement en français en vous basant sur les "
-            "extraits fournis. Citez le code du formulaire et la section."
+            "Assistant francophone: répondez uniquement en français en vous appuyant exclusivement sur les extraits fournis. "
+            "Citez clairement le code du formulaire et la section/page d'où provient l'information."
         )
         user_prompt = q_fr + "\nExtraits:\n" + "\n".join(evidence_texts)
         answer = llm.chat(system_prompt, user_prompt, max_new_tokens=256)
