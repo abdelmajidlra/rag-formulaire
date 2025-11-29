@@ -44,9 +44,12 @@
 - **Recherche Hybride** : Combine BM25 (lexical) et recherche vectorielle (sémantique)
 - **Reranking Cross-Encoder** : Améliore la pertinence des résultats
 - **Garde-fous CRAG** : Évaluation de la qualité des preuves avant génération
+- **Détection d'Hallucinations** : Validation automatique des codes de formulaire mentionnés
+- **Auto-Réflexion Améliorée** : Le LLM critique ses propres réponses avec 4 points de vérification
 - **LLM Local** : Mistral-7B-Instruct avec quantification 4-bit sur GPU
 - **Parsing Avancé** : Docling avec support OCR pour PDF complexes
 - **Singleton Pattern** : Optimisation mémoire GPU (~50% d'économie)
+- **Chunks Optimisés** : 400 tokens avec 80 tokens de chevauchement pour meilleur contexte
 
 ---
 
@@ -161,9 +164,11 @@ graph TB
 ### 🛡️ Garde-fous et Sécurité
 
 - **Évaluation CRAG** : Vérifie la qualité des preuves avant génération
-- **Auto-Réflexion** : Le LLM critique sa propre réponse
+- **Validation de Codes** : Détecte et bloque les hallucinations de codes de formulaire (IMM/CIT)
+- **Auto-Réflexion Améliorée** : Critique structurée en 4 points avec détection de 8 mots-clés problématiques
 - **Messages de Fallback** : Refuse de répondre si les preuves sont insuffisantes
 - **Disclaimer Automatique** : Avertissement légal sur chaque réponse
+- **Mode Strict Configurable** : Option de vérification n-gram ultra-stricte
 
 ### 🚀 Optimisations Performantes
 
@@ -258,6 +263,9 @@ Les paramètres de configuration se trouvent dans `src/rag_formulaire/config.py`
 | `RAG_FORM_MIN_FORMS` | `40` | Nombre minimum de formulaires à télécharger |
 | `RAG_FORM_MAX_SYNTH` | `0` | Nombre de formulaires synthétiques (désactivé) |
 | `RAG_FORM_ENABLE_GRAPHRAG` | `false` | Activer GraphRAG (expérimental) |
+| `RAG_FORM_STRICT_VERIFICATION` | `false` | Mode strict : vérification n-gram (peut bloquer réponses valides) |
+| `RAG_FORM_CHUNK_SIZE` | `400` | Taille des chunks en tokens (était 200) |
+| `RAG_FORM_CHUNK_OVERLAP` | `80` | Chevauchement entre chunks en tokens (était 30) |
 | `GEN_MODEL_NAME` | `mistralai/Mistral-7B-Instruct-v0.2` | Modèle LLM HuggingFace |
 | `GEN_LOAD_4BIT` | `True` | Quantification 4-bit sur GPU |
 
