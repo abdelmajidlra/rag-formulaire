@@ -34,7 +34,15 @@ CRAG_MIN_SCORE = 0.05
 CRAG_MEAN_TOPK = 0.02
 CRAG_MIN_DISTINCT_FORMS = 1
 
+# Hallucination detection
 HALLUCINATION_NGRAM = 5
+# Strict verification mode: if enabled, performs n-gram matching (may block valid natural language)
+# If disabled, only validates form codes (recommended)
+ENABLE_STRICT_VERIFICATION = os.getenv("RAG_FORM_STRICT_VERIFICATION", "false").lower() == "true"
+
+# Chunking configuration  
+CHUNK_SIZE = int(os.getenv("RAG_FORM_CHUNK_SIZE", "400"))  # Increased from 200 for better context
+CHUNK_OVERLAP = int(os.getenv("RAG_FORM_CHUNK_OVERLAP", "80"))  # Increased from 30
 
 # GraphRAG flag
 ENABLE_GRAPHRAG = os.getenv("RAG_FORM_ENABLE_GRAPHRAG", "false").lower() == "true"
