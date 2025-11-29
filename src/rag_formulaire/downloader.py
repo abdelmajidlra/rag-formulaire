@@ -81,21 +81,35 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
     min_target = min_count or config.MIN_FORMS
     entries: List[FormMetadata] = []
 
+    # Track uniqueness to prevent duplicates in manifest
+    seen_urls = set()
+    seen_codes = set()
+
     # Try to load existing manifest
     if config.MANIFEST_PATH.exists():
         try:
             data = json.loads(config.MANIFEST_PATH.read_text("utf-8"))
             for item in data:
+                url = item.get("pdf_url", "")
+                code = item.get("form_code", "")
+
+                # Skip if we've already seen this URL or Form Code (deduplication)
+                if url in seen_urls or (code and code in seen_codes):
+                    continue
+
                 entries.append(
                     FormMetadata(
-                        form_code=item.get("form_code", ""),
+                        form_code=code,
                         title_fr=item.get("title_fr", ""),
-                        pdf_url=item.get("pdf_url", ""),
+                        pdf_url=url,
                         local_path=Path(item.get("local_path")),
                         category=item.get("category"),
                         last_updated=item.get("last_updated"),
                     )
                 )
+                seen_urls.add(url)
+                if code:
+                    seen_codes.add(code)
         except json.JSONDecodeError:
             entries = []
 
@@ -122,14 +136,34 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
             except Exception as exc:  # noqa: BLE001
                 logger.debug("Ignoré %s: %s", page_url, exc)
 
-        seen_urls = set()
         logger.info("Liens PDF détectés après crawl: %s", len(pdf_links))
+
         for idx, (text, url) in enumerate(tqdm(pdf_links, desc="Téléchargement")):
+            # Check uniqueness against existing entries
             if url in seen_urls:
                 continue
+
+            pattern = r"(IMM|CIT)\s?-?[\s_]?(\d{3,4})"
+            match = re.search(pattern, text, re.IGNORECASE)
+
+            # Fallback URL check logic
+            if not match:
+                match = re.search(pattern, url, re.IGNORECASE)
+
+            if match:
+                prefix = match.group(1).upper()
+                number = match.group(2)
+                form_code = f"{prefix} {number}"
+            else:
+                form_code = f"FORM-{idx}"
+
+            # Also check uniqueness by form code if possible
+            if form_code in seen_codes:
+                continue
+
             seen_urls.add(url)
-            form_code_match = re.search(r"(IMM|CIT)\s?-?\d{3,4}", text, re.IGNORECASE)
-            form_code = form_code_match.group(0).upper().replace("  ", " ") if form_code_match else f"FORM-{idx}"
+            seen_codes.add(form_code)
+
             title_fr = text
             local_path = config.RAW_FORMS_DIR / f"{form_code.replace(' ', '_')}.pdf"
             if local_path.exists() and local_path.stat().st_size > 2048:

@@ -11,9 +11,24 @@ from . import config
 
 logger = logging.getLogger(__name__)
 
+# Global variable to store the single instance
+_SHARED_LLM = None
+
 
 class LocalLLM:
+    def __new__(cls):
+        global _SHARED_LLM
+        if _SHARED_LLM is None:
+            _SHARED_LLM = super(LocalLLM, cls).__new__(cls)
+            _SHARED_LLM._initialized = False
+        return _SHARED_LLM
+
     def __init__(self):
+        # Prevent re-initialization if already loaded
+        if getattr(self, "_initialized", False):
+            return
+
+        self._initialized = True
         self.model = None
         self.tokenizer = None
 
@@ -33,7 +48,7 @@ class LocalLLM:
                 )
                 logger.info("Quantification 4 bits activée pour %s", config.GEN_MODEL_NAME)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("Impossible d'activer la quantification 4 bits: %s", exc)
+                logger.warning("Impossible d'activer la quantification 4 bits (module bitsandbytes manquant ?): %s", exc)
                 quant_config = None
 
         try:  # pragma: no cover - heavy dependency
@@ -54,7 +69,7 @@ class LocalLLM:
                 **load_kwargs,
             )
 
-            if self.device != "cuda":
+            if self.device != "cuda" and not getattr(self.model, "is_quantized", False):
                 self.model = self.model.to(self.device)
 
             logger.info("LLM Mistral chargé avec succès (%s)", config.GEN_MODEL_NAME)
