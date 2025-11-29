@@ -39,36 +39,61 @@ class AdvancedSelfReflector:
         self.llm = LocalLLM()
 
     def reflect(self, question: str, answer: str, evidence: List[ContextualizedChunk]) -> str:
-        snippets = "\n".join([c.base_chunk.content[:200] for c in evidence[:3]])
+        snippets = "\n".join([c.base_chunk.content[:300] for c in evidence[:5]])
         
         # Extract form codes from evidence for verification
-        evidence_forms = ", ".join(sorted(set(c.base_chunk.form_code for c in evidence)))
+        evidence_forms = ", ".join(sorted(set(c.base_chunk.form_code for c in evidence[:10])))
         
-        # Enhanced reflection prompt with form code verification
+        # Enhanced reflection prompt with confidence scoring
         prompt = (
             f"Question: {question}\n"
             f"Réponse générée: {answer}\n\n"
             f"Formulaires dans les preuves: {evidence_forms}\n"
             f"Extraits de preuves: {snippets}\n\n"
             "Analyse critique (réponds en français):\n"
-            "1. La réponse mentionne-t-elle des codes de formulaire (IMM XXXX, CIT XXXX)?\n"
-            "2. Ces codes correspondent-ils EXACTEMENT aux formulaires dans les preuves?\n"
-            "3. Y a-t-il des informations qui ne sont PAS supportées par les extraits?\n"
-            "4. La réponse est-elle incertaine ou spéculative?\n\n"
-            "Indique 'PROBLEME' si tu détectes une incohérence, sinon 'OK'."
+            "1. La réponse mentionne-t-elle des codes de formulaire?\n"
+            "2. Si oui, ces codes sont-ils présents dans les preuves?\n"
+            "3. Les informations sont-elles supportées par les extraits?\n"
+            "4. La réponse est-elle confiante et précise?\n\n"
+            "Donne un score de confiance de 0.0 à 1.0:\n"
+            "- 0.0-0.3: réponse incorrecte ou non supportée\n"
+            "- 0.4-0.6: réponse partiellement supportée\n"
+            "- 0.7-1.0: réponse bien supportée\n\n"
+            "Réponds au format: CONFIANCE: <score>\nExplication: <raison>"
         )
         
-        critique = self.llm.generate(prompt, max_new_tokens=128)
+        critique = self.llm.generate(prompt, max_new_tokens=200)
         
-        # More aggressive detection of issues
-        problematic_keywords = ["incertain", "specul", "faible", "probleme", "problème", 
-                                "incohéren", "erreur", "incorrect", "faux"]
-        if any(word in critique.lower() for word in problematic_keywords):
-            logger.info(f"Self-reflection detected issue: {critique[:100]}")
+        # Extract confidence score from critique
+        confidence_match = re.search(r'CONFIANCE:\s*([0-9]*\.?[0-9]+)', critique, re.IGNORECASE)
+        if confidence_match:
+            try:
+                confidence = float(confidence_match.group(1))
+            except ValueError:
+                confidence = 0.5  # Default to moderate confidence if parsing fails
+        else:
+            # Fallback: keyword-based confidence estimation
+            problematic_keywords = ["incorrect", "faux", "erreur", "probleme", "problème"]
+            supportive_keywords = ["correct", "supporté", "confirmé", "valide", "ok"]
+            
+            critique_lower = critique.lower()
+            if any(word in critique_lower for word in problematic_keywords):
+                confidence = 0.2
+            elif any(word in critique_lower for word in supportive_keywords):
+                confidence = 0.8
+            else:
+                confidence = 0.5
+        
+        logger.info(f"Self-reflection confidence: {confidence:.2f} | Critique: {critique[:150]}")
+        
+        # Only reject if confidence is very low (more lenient threshold)
+        if confidence < 0.3:
+            logger.warning(f"Low confidence ({confidence:.2f}), returning cautious response")
             return (
                 "Réponse prudente: les informations ne sont pas entièrement confirmées par les extraits fournis. "
                 "Veuillez consulter les formulaires officiels."
             )
+        
         return answer
 
 
@@ -106,23 +131,50 @@ def _validate_form_codes_in_answer(answer: str, evidence: List[ContextualizedChu
     """
     Validate that form codes (IMM/CIT XXXX) mentioned in answer exist in evidence.
     Prevents hallucination of non-existent form codes.
+    Uses fuzzy matching to handle spacing variations (e.g., "IMM5476" vs "IMM 5476").
     """
-    # Extract form codes from answer
-    answer_codes = set(re.findall(r'(IMM|CIT)\s*\d{4}', answer, re.IGNORECASE))
+    # Extract form codes from answer - FIXED: capture full code with \d{4}
+    # Pattern now captures the ENTIRE code, not just the prefix
+    answer_codes = set(re.findall(r'(?:IMM|CIT)\s*\d{4}', answer, re.IGNORECASE))
     
     if not answer_codes:
         return True  # No form codes to validate
     
-    # Extract form codes from evidence
+    # Extract form codes from evidence chunks
     evidence_codes = {chunk.base_chunk.form_code for chunk in evidence}
     
-    # Normalize codes (handle spacing variations)
-    answer_codes_normalized = {re.sub(r'\s+', ' ', code.upper()) for code in answer_codes}
+    # Also extract codes from evidence content for robustness
+    evidence_content = " ".join([chunk.base_chunk.content for chunk in evidence])
+    evidence_codes_in_content = set(re.findall(r'(?:IMM|CIT)\s*\d{4}', evidence_content, re.IGNORECASE))
     
-    # Check if all mentioned codes are in evidence
-    for code in answer_codes_normalized:
-        if code not in evidence_codes:
-            logger.warning(f"Hallucinated form code detected in answer: {code} (not in evidence: {evidence_codes})")
-            return False
+    # Combine both sources of evidence codes
+    all_evidence_codes = evidence_codes | evidence_codes_in_content
     
+    # Normalize all codes: uppercase, single space between prefix and number
+    def normalize_code(code: str) -> str:
+        """Normalize form code to format 'IMM 1234' or 'CIT 1234'"""
+        code = code.upper()
+        # Handle various formats: IMM1234, IMM 1234, imm  1234
+        match = re.match(r'(IMM|CIT)\s*(\d{4})', code, re.IGNORECASE)
+        if match:
+            return f"{match.group(1).upper()} {match.group(2)}"
+        return code
+    
+    answer_codes_normalized = {normalize_code(code) for code in answer_codes}
+    evidence_codes_normalized = {normalize_code(code) for code in all_evidence_codes}
+    
+    # Check if all mentioned codes are in evidence (with fuzzy matching)
+    hallucinated_codes = answer_codes_normalized - evidence_codes_normalized
+    
+    if hallucinated_codes:
+        logger.warning(
+            f"Hallucinated form codes detected in answer: {hallucinated_codes} "
+            f"(not in evidence: {evidence_codes_normalized})"
+        )
+        return False
+    
+    logger.debug(
+        f"Form code validation passed. Answer codes: {answer_codes_normalized}, "
+        f"Evidence codes: {evidence_codes_normalized}"
+    )
     return True
