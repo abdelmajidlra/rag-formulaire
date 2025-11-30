@@ -133,6 +133,11 @@ def parse_chunks_from_doc(doc, form_code: str, title: str):
                 logger.debug(f"Skipping short chunk ({len(section_clean)} chars): {section_clean[:30]}")
                 continue
             
+            # AGGRESSIVE: Skip ANY chunk ending with "..." (all truncation)
+            if section_clean.endswith('...'):
+                logger.debug(f"Skipping truncated chunk: ...{section_clean[-70:]}")
+                continue
+            
             # Skip sections with form codes + ellipsis (truncated)
             if re.match(r'^(IMM|CIT)\s*\d{4}', section_clean) and '...' in section_clean and len(section_clean) < 100:
                 logger.debug(f"Skipping truncated form code chunk: {section_clean[:50]}")
