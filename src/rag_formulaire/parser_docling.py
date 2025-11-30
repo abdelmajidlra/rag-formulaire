@@ -125,26 +125,37 @@ def parse_chunks_from_doc(doc, form_code: str, title: str):
         if not sections:
             sections = [text]
         for section in sections:
-            # Filter out low-quality chunks
+            # Filter out low-quality chunks - STRENGTHENED
             section_clean = section.strip()
             
             # Skip empty or very short sections
             if len(section_clean) < 50:
+                logger.debug(f"Skipping short chunk ({len(section_clean)} chars): {section_clean[:30]}")
                 continue
             
-            # Skip sections that are just form codes or page numbers
-            if re.match(r'^(IMM|CIT)\s*\d{4}(\s*\(\d{2}-\d{4}\)\s*F)?\.{3,}$', section_clean):
+            # Skip sections with form codes + ellipsis (truncated)
+            if re.match(r'^(IMM|CIT)\s*\d{4}', section_clean) and '...' in section_clean and len(section_clean) < 100:
                 logger.debug(f"Skipping truncated form code chunk: {section_clean[:50]}")
                 continue
             
-            # Skip Adobe Reader error messages
-            if "adobe reader" in section_clean.lower() and len(section_clean) < 300:
+            # Skip standalone "F..." artifacts
+            if re.match(r'^F\.{3,}$', section_clean):
+                logger.debug(f"Skipping truncation artifact: {section_clean}")
+                continue
+            
+            # Skip Adobe Reader errors (increased threshold to 500)
+            if "adobe reader" in section_clean.lower() and len(section_clean) < 500:
                 logger.debug(f"Skipping Adobe error message chunk from {form_code}")
                 continue
             
-            # Skip sections with only metadata/page numbers
+            # Skip page numbers only
             if re.match(r'^Page\s+\d+\s+de\s+\d+$', section_clean, re.IGNORECASE):
                 logger.debug(f"Skipping page number only chunk: {section_clean}")
+                continue
+            
+            # Skip chunks ENDING with truncated form codes (e.g., "text IMM 5476 (11-...")
+            if re.search(r'(IMM|CIT)\s*\d{4}\s*\([0-9\-]+\)\s*[A-Z]?\.{3,}$', section_clean):
+                logger.debug(f"Skipping chunk ending with truncated code: ...{section_clean[-50:]}")
                 continue
             
             position += 1
