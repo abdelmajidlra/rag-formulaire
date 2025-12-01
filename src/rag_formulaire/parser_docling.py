@@ -32,12 +32,50 @@ def parse_pdf_to_docling(pdf_path: str):
     except Exception as exc:
         logger.warning("Docling failed for %s: %s, trying fallback", path, exc)
     
+    # Check for XFA "Please wait..." placeholder in extracted text
+    def _is_xfa_placeholder(text: str) -> bool:
+        return "Please wait..." in text and "Adobe Reader" in text and len(text) < 1000
+
+    # Helper to try XFA conversion with PyMuPDF
+    def _try_convert_xfa(path: Path):
+        try:
+            import fitz
+            doc = fitz.open(path)
+            # Check if it's actually XFA
+            if not doc.is_pdf:
+                return None
+            
+            # If PyMuPDF can read it, we can just extract text directly
+            # Often PyMuPDF handles XFA better than pypdf/pdfplumber
+            pages = []
+            for page in doc:
+                text = page.get_text()
+                if text.strip() and not _is_xfa_placeholder(text):
+                    pages.append({"text": text})
+            
+            if pages:
+                logger.info("Successfully extracted text from XFA form %s using PyMuPDF", path.name)
+                return {"pages": pages}
+                
+        except Exception as e:
+            logger.debug("XFA conversion failed for %s: %s", path, e)
+        return None
+
     # Fallback 1: pdfplumber (good for form-based PDFs)
     try:
         pages = []
         with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text() or ""
+                
+                # Check for XFA failure immediately
+                if _is_xfa_placeholder(text):
+                    logger.warning("Detected XFA placeholder in %s. Attempting fallback conversion...", path.name)
+                    xfa_result = _try_convert_xfa(path)
+                    if xfa_result:
+                        return xfa_result
+                    break # Stop processing this file with pdfplumber
+                
                 if text.strip():  # Only add pages with actual content
                     pages.append({"text": text})
         
@@ -55,6 +93,14 @@ def parse_pdf_to_docling(pdf_path: str):
             reader = pypdf.PdfReader(file)
             for page in reader.pages:
                 text = page.extract_text() or ""
+                
+                if _is_xfa_placeholder(text):
+                     logger.warning("Detected XFA placeholder in %s (pypdf). Attempting fallback...", path.name)
+                     xfa_result = _try_convert_xfa(path)
+                     if xfa_result:
+                         return xfa_result
+                     break
+                
                 if text.strip():
                     pages.append({"text": text})
         
@@ -64,7 +110,8 @@ def parse_pdf_to_docling(pdf_path: str):
     except Exception as exc:
         logger.warning("pypdf failed for %s: %s", path, exc)
     
-    # Fallback 3: pymupdf/fitz (OCR-like extraction for scanned PDFs)
+    # Fallback 3: pymupdf/fitz (OCR-like extraction for scanned PDFs & XFA)
+    # This is now the primary handler for XFA if previous methods failed/detected XFA
     try:
         import fitz  # pymupdf
         pages = []
@@ -72,7 +119,7 @@ def parse_pdf_to_docling(pdf_path: str):
         for page_num in range(doc.page_count):
             page = doc[page_num]
             text = page.get_text() or ""
-            if text.strip():
+            if text.strip() and not _is_xfa_placeholder(text):
                 pages.append({"text": text})
         doc.close()
         
@@ -85,7 +132,7 @@ def parse_pdf_to_docling(pdf_path: str):
     # All methods failed - return empty but log the failure
     logger.error(
         "All PDF extraction methods failed for %s. This PDF may be corrupt, "
-        "encrypted, or require specific Adobe Reader features. Skipping.", 
+        "encrypted, or require specific Adobe Reader features (XFA). Skipping.", 
         path.name
     )
     return {"pages": []}

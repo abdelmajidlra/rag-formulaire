@@ -115,12 +115,19 @@ class LocalLLM:
 
         inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
 
+        # Truncate input if too long to prevent overflow errors
+        if inputs.input_ids.shape[1] > 2048:
+             inputs.input_ids = inputs.input_ids[:, -2048:]
+             inputs.attention_mask = inputs.attention_mask[:, -2048:]
+
         with torch.no_grad():
             output = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
                 do_sample=False,      # réponses plus stables pour ton RAG
                 temperature=0.1,
+                repetition_penalty=1.2, # Prevent loops like "pour pour pour"
+                pad_token_id=self.tokenizer.eos_token_id
             )
 
         full_text = self.tokenizer.decode(output[0], skip_special_tokens=True)

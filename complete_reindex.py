@@ -61,55 +61,17 @@ def cleanup_corrupt_pdfs():
     return corrupt_count
 
 
-def download_forms():
-    """Download forms with enhanced PDF validation."""
-    logger.info("Step 2/5: Downloading forms with validation...")
+from rag_formulaire.ingest import ingest_pipeline
+
+def run_ingestion():
+    """Run the full ingestion pipeline."""
+    logger.info("Step 2/3: Running full ingestion pipeline (Download -> Parse -> Index)...")
     try:
-        forms = download_french_ircc_forms()
-        logger.info(f"Successfully downloaded {len(forms)} valid forms")
-        return forms
+        # ingest_pipeline handles downloading, parsing (with XFA fix), and indexing
+        ingest_pipeline() 
+        logger.info("✓ Ingestion pipeline completed")
     except Exception as e:
-        logger.error(f"Download failed: {e}")
-        raise
-
-
-def parse_and_chunk():
-    """Parse PDFs and create chunks with quality filters."""
-    logger.info("Step 3/5: Parsing PDFs with multi-fallback extraction...")
-    try:
-        chunks = ingest_forms()
-        logger.info(f"Successfully created {len(chunks)} quality chunks")
-        
-        # Log chunk statistics
-        form_codes = {c.form_code for c in chunks}
-        logger.info(f"Chunks extracted from {len(form_codes)} unique forms")
-        
-        # Check for quality issues
-        avg_length = sum(len(c.content) for c in chunks) / len(chunks) if chunks else 0
-        logger.info(f"Average chunk length: {avg_length:.0f} characters")
-        
-        return chunks
-    except Exception as e:
-        logger.error(f"Parsing failed: {e}")
-        raise
-
-
-def build_indexes(chunks):
-    """Build BM25 and vector indexes."""
-    logger.info("Step 4/5: Building search indexes...")
-    try:
-        # BM25 index
-        logger.info("Building BM25 index...")
-        build_bm25_index(chunks)
-        logger.info("✓ BM25 index created")
-        
-        # Vector index
-        logger.info("Building vector index...")
-        build_vector_index(chunks)
-        logger.info("✓ Vector index created")
-        
-    except Exception as e:
-        logger.error(f"Indexing failed: {e}")
+        logger.error(f"Ingestion failed: {e}")
         raise
 
 
@@ -158,16 +120,10 @@ def main():
         # Step 1: Cleanup
         cleanup_corrupt_pdfs()
         
-        # Step 2: Download
-        forms = download_forms()
+        # Step 2: Full Ingestion (Download, Parse, Index)
+        run_ingestion()
         
-        # Step 3: Parse and chunk
-        chunks = parse_and_chunk()
-        
-        # Step 4: Build indexes
-        build_indexes(chunks)
-        
-        # Step 5: Validate
+        # Step 3: Validate
         if validate_index():
             logger.info("")
             logger.info("="*70)

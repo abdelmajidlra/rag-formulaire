@@ -66,7 +66,10 @@ def _extract_form_pages(soup: BeautifulSoup) -> List[str]:
 def _download_pdf(url: str, target: Path) -> bool:
     """Download PDF with validation to prevent saving HTML error pages as PDFs."""
     try:
-        resp = requests.get(url, timeout=20)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        resp = requests.get(url, headers=headers, timeout=20)
         if resp.status_code == 200 and resp.content:
             # Validate that downloaded content is actually a PDF
             content_start = resp.content[:1024].lower()  # Check first 1KB
@@ -140,7 +143,10 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
 
     # Attempt crawl
     try:
-        response = requests.get(INDEX_URL, timeout=30)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        response = requests.get(INDEX_URL, headers=headers, timeout=30)
         response.raise_for_status()
         soup = BeautifulSoup(response.text, "html.parser")
         pdf_links = _extract_pdf_links_from_soup(soup)
@@ -149,7 +155,7 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
         # Enrichir en parcourant les pages individuelles
         for page_url in tqdm(form_pages, desc="Exploration des pages de formulaires"):
             try:
-                page_resp = requests.get(page_url, timeout=20)
+                page_resp = requests.get(page_url, headers=headers, timeout=20)
                 if page_resp.status_code == 200:
                     page_soup = BeautifulSoup(page_resp.text, "html.parser")
                     pdf_links.extend(_extract_pdf_links_from_soup(page_soup))
