@@ -86,9 +86,10 @@ class AdvancedSelfReflector:
         
         logger.info(f"Self-reflection confidence: {confidence:.2f} | Critique: {critique[:150]}")
         
-        # Only reject if confidence is very low (threshold at 0.25 for Llama 3 8B)
-        # Llama 3 8B is conservative in scoring, so we use a lower threshold
-        if confidence < 0.25:
+        # Only reject if confidence is very low (threshold at 0.15 for Llama 3 8B)
+        # Llama 3 8B is conservative in scoring (~0.20 for valid answers), so we use a permissive threshold
+        # This reduces false negatives while still catching truly problematic responses (< 0.15)
+        if confidence < 0.15:
             logger.warning(f"Low confidence ({confidence:.2f}), returning cautious response")
             return (
                 "Réponse prudente: les informations ne sont pas entièrement confirmées par les extraits fournis. "

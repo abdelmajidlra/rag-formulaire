@@ -64,12 +64,32 @@ def _extract_form_pages(soup: BeautifulSoup) -> List[str]:
 
 
 def _download_pdf(url: str, target: Path) -> bool:
+    """Download PDF with validation to prevent saving HTML error pages as PDFs."""
     try:
         resp = requests.get(url, timeout=20)
         if resp.status_code == 200 and resp.content:
+            # Validate that downloaded content is actually a PDF
+            content_start = resp.content[:1024].lower()  # Check first 1KB
+            
+            # Check for PDF magic bytes
+            if not content_start.startswith(b'%pdf-'):
+                logger.warning("Rejected %s: not a valid PDF (missing PDF header)", url)
+                return False
+            
+            # Reject HTML error pages disguised as PDFs
+            if b'<!doctype' in content_start or b'<html' in content_start:
+                logger.warning("Rejected %s: HTML content (likely error page)", url)
+                return False
+            
+            # Validate minimum size (5KB) to catch truncated/corrupt downloads
+            if len(resp.content) < 5120:
+                logger.warning("Rejected %s: file too small (%d bytes)", url, len(resp.content))
+                return False
+            
             target.parent.mkdir(parents=True, exist_ok=True)
             with open(target, "wb") as f:
                 f.write(resp.content)
+            logger.debug("Downloaded valid PDF: %s (%d bytes)", target.name, len(resp.content))
             return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("Echec téléchargement %s: %s", url, exc)
@@ -166,7 +186,7 @@ def download_french_ircc_forms(min_count: int | None = None) -> List[FormMetadat
 
             title_fr = text
             local_path = config.RAW_FORMS_DIR / f"{form_code.replace(' ', '_')}.pdf"
-            if local_path.exists() and local_path.stat().st_size > 2048:
+            if local_path.exists() and local_path.stat().st_size > 5120:
                 logger.debug("Fichier déjà présent: %s", local_path)
             else:
                 success = _download_pdf(url, local_path)
