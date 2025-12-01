@@ -76,13 +76,33 @@ class LocalLLM:
 
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "LLM non disponible (%s), utilisation d'un générateur factice.", exc
+                "Echec du chargement du modèle principal (%s): %s", config.GEN_MODEL_NAME, exc
             )
-            self.model = None
-            self.tokenizer = None
+            
+            # Tentative de repli sur un modèle plus léger (TinyLlama 1.1B)
+            # Utile pour les environnements CPU ou avec peu de VRAM
+            try:
+                fallback_name = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+                logger.info("Tentative de chargement du modèle de repli: %s", fallback_name)
+                
+                self.tokenizer = AutoTokenizer.from_pretrained(fallback_name)
+                self.model = AutoModelForCausalLM.from_pretrained(
+                    fallback_name,
+                    device_map="auto" if self.device == "cuda" else "cpu",
+                    torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
+                )
+                logger.info("Modèle de repli chargé avec succès!")
+                
+            except Exception as fallback_exc:
+                logger.error(
+                    "Echec du chargement du modèle de repli: %s. Utilisation du mode hors-ligne.", 
+                    fallback_exc
+                )
+                self.model = None
+                self.tokenizer = None
 
         if self.model is None:
-            logger.info("Utilisation du générateur factice interne (CPU pur).")
+            logger.warning("ATTENTION: Aucun LLM chargé. Le système ne pourra pas générer de réponses.")
 
     # --- Génération principale -------------------------------------------------
     def generate(self, prompt: str, max_new_tokens: int = 256) -> str:
