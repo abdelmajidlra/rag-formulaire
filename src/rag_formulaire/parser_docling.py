@@ -30,6 +30,66 @@ def parse_pdf_to_docling(pdf_path: str):
                 return result
             logger.warning("Docling returned empty result for %s, trying fallback", path)
     except Exception as exc:
+        logger.warning("Docling failed for %s: %s, trying fallback", path, exc)
+    
+    # Check for XFA "Please wait..." placeholder in extracted text
+    def _is_xfa_placeholder(text: str) -> bool:
+        return "Please wait..." in text and "Adobe Reader" in text and len(text) < 1000
+
+    # Helper to try XFA conversion with PyMuPDF and pikepdf
+    def _try_convert_xfa(path: Path):
+        # Method 1: PyMuPDF (Fitz)
+        try:
+            import fitz
+            doc = fitz.open(path)
+            if not doc.is_pdf:
+                return None
+            
+            pages = []
+            for page in doc:
+                text = page.get_text()
+                if text.strip() and not _is_xfa_placeholder(text):
+                    pages.append({"text": text})
+            
+            if pages:
+                logger.info("Successfully extracted text from XFA form %s using PyMuPDF", path.name)
+                return {"pages": pages}
+        except Exception as e:
+            logger.debug("PyMuPDF XFA extraction failed for %s: %s", path, e)
+
+        # Method 2: pikepdf (Extract XFA XML)
+        try:
+            import pikepdf
+            pdf = pikepdf.Pdf.open(path)
+            if "/AcroForm" in pdf.Root and "/XFA" in pdf.Root.AcroForm:
+                logger.info("Attempting to extract XFA XML from %s using pikepdf", path.name)
+                xfa_field = pdf.Root.AcroForm.XFA
+                # XFA can be an array or stream
+                xml_content = b""
+                if isinstance(xfa_field, pikepdf.Array):
+                    for i in range(1, len(xfa_field), 2):  # Odd indices are streams
+                        xml_content += xfa_field[i].read_raw_bytes()
+                elif hasattr(xfa_field, "read_raw_bytes"):
+                    xml_content = xfa_field.read_raw_bytes()
+                
+                # Simple XML text extraction (naive)
+                text_content = re.sub(r'<[^>]+>', ' ', xml_content.decode('utf-8', errors='ignore'))
+                text_content = re.sub(r'\s+', ' ', text_content).strip()
+                
+                if len(text_content) > 100:
+                    return {"pages": [{"text": text_content}]}
+                    
+        except ImportError:
+            logger.warning("pikepdf not installed - cannot extract XFA XML")
+        except Exception as e:
+            logger.debug("pikepdf XFA extraction failed for %s: %s", path, e)
+            
+        return None
+
+    # Fallback 1: pdfplumber (good for form-based PDFs)
+    try:
+        pages = []
+        with pdfplumber.open(path) as pdf:
             for page in pdf.pages:
                 text = page.extract_text() or ""
                 
@@ -39,7 +99,7 @@ def parse_pdf_to_docling(pdf_path: str):
                     xfa_result = _try_convert_xfa(path)
                     if xfa_result:
                         return xfa_result
-                    break # Stop processing this file with pdfplumber
+                    break  # Stop processing this file with pdfplumber
                 
                 if text.strip():  # Only add pages with actual content
                     pages.append({"text": text})
@@ -60,11 +120,11 @@ def parse_pdf_to_docling(pdf_path: str):
                 text = page.extract_text() or ""
                 
                 if _is_xfa_placeholder(text):
-                     logger.warning("Detected XFA placeholder in %s (pypdf). Attempting fallback...", path.name)
-                     xfa_result = _try_convert_xfa(path)
-                     if xfa_result:
-                         return xfa_result
-                     break
+                    logger.warning("Detected XFA placeholder in %s (pypdf). Attempting fallback...", path.name)
+                    xfa_result = _try_convert_xfa(path)
+                    if xfa_result:
+                        return xfa_result
+                    break
                 
                 if text.strip():
                     pages.append({"text": text})
