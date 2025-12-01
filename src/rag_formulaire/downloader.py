@@ -65,11 +65,14 @@ def _extract_form_pages(soup: BeautifulSoup) -> List[str]:
 
 def _download_pdf(url: str, target: Path) -> bool:
     """Download PDF with validation to prevent saving HTML error pages as PDFs."""
-    try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
-        resp = requests.get(url, headers=headers, timeout=20)
+        resp = requests.get(url, headers=headers, timeout=20, allow_redirects=True)
+        
+        if resp.url != url:
+            logger.debug("Redirected from %s to %s", url, resp.url)
+            
         if resp.status_code == 200 and resp.content:
             # Validate that downloaded content is actually a PDF
             content_start = resp.content[:1024].lower()  # Check first 1KB

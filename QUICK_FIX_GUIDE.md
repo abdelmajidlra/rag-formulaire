@@ -104,6 +104,19 @@ After re-indexing, run your evaluation notebook:
    export RAG_FORM_GEN_MODEL="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
    ```
 
+   ```bash
+   export RAG_FORM_GEN_MODEL="TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+   ```
+
+### If getting "XFA placeholder" or "All PDF extraction methods failed":
+
+1. **Cause:** The form is a dynamic XFA PDF (e.g., IMM 5707, IMM 0016).
+2. **Fix:** Install `pikepdf` to allow extracting the raw XML data.
+   ```bash
+   pip install pikepdf
+   ```
+3. **Verify:** Run `python complete_reindex.py` again.
+
 ### If getting "Aucun extrait trouvé":
 
 1. **Check which forms are indexed:**
