@@ -65,6 +65,7 @@ def _extract_form_pages(soup: BeautifulSoup) -> List[str]:
 
 def _download_pdf(url: str, target: Path) -> bool:
     """Download PDF with validation to prevent saving HTML error pages as PDFs."""
+    try:
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
         }
