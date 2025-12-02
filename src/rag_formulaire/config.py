@@ -1,6 +1,9 @@
 import os
 from pathlib import Path
 
+# Set PyTorch memory configuration to avoid fragmentation - MUST BE DONE BEFORE IMPORTING TORCH
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 # Base directories
 BASE_DIR = Path(os.getenv("RAG_FORM_BASE_DIR", Path(__file__).resolve().parents[2]))
 DATA_DIR = Path(os.getenv("RAG_FORM_DATA_DIR", BASE_DIR / "data"))
