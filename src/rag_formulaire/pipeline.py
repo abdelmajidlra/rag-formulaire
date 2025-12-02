@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import torch
 from typing import Any, Dict, List
 
 from . import config
@@ -83,9 +84,26 @@ class RAGPipeline:
             "Vous êtes un assistant spécialisé dans les formulaires IRCC. Répondez uniquement en français en vous basant sur les "
             "extraits fournis. Citez le code du formulaire et la section."
         )
-        user_prompt = q_fr + "Extraits:" + "".join(evidence_texts)
+        user_prompt = q_fr + "\n\nExtraits:\n" + "\n---\n".join(evidence_texts)
         
-        answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+        # Memory cleanup before generation
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
+        try:
+            answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+        except RuntimeError as e:
+            if "out of memory" in str(e):
+                logger.warning("OOM detected during generation. Retrying with reduced context.")
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                
+                # Retry with fewer chunks (half)
+                reduced_evidence = evidence_texts[:max(1, len(evidence_texts)//2)]
+                user_prompt = q_fr + "\n\nExtraits (Reduced):\n" + "\n---\n".join(reduced_evidence)
+                answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+            else:
+                raise e
 
         # Validation des codes de formulaire (empêche hallucinations)
         if verify_response_against_evidence(answer, reranked):

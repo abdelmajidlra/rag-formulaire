@@ -5,6 +5,9 @@ import sys
 import torch
 from typing import List, Dict, Any
 
+# Set PyTorch memory configuration to avoid fragmentation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 try:
     from IPython.display import display, Markdown
 except ImportError:
@@ -22,6 +25,7 @@ def force_cleanup():
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
         logger.debug("GPU cache cleared.")
 
 def display_result(result: Dict[str, Any], manifest_list: List[Dict] = None):
