@@ -53,5 +53,94 @@ def ingest_pipeline(min_forms: int | None = None):
     return index_store
 
 
+def cleanup_corrupt_pdfs():
+    """Remove any corrupt PDFs from previous downloads."""
+    logger.info("Step 1/3: Cleaning up corrupt PDFs...")
+
+    if not config.RAW_FORMS_DIR.exists():
+        logger.info("No existing PDFs to clean up")
+        return 0
+
+    corrupt_count = 0
+    for pdf_file in config.RAW_FORMS_DIR.glob("*.pdf"):
+        try:
+            with open(pdf_file, 'rb') as f:
+                header = f.read(1024).lower()
+
+            is_corrupt = (
+                not header.startswith(b'%pdf-') or
+                b'<!doctype' in header or
+                b'<html' in header or
+                pdf_file.stat().st_size < 5120
+            )
+
+            if is_corrupt:
+                logger.warning(f"Removing corrupt PDF: {pdf_file.name}")
+                pdf_file.unlink()
+                corrupt_count += 1
+        except Exception as e:
+            logger.error(f"Error checking {pdf_file.name}: {e}")
+
+    logger.info(f"Removed {corrupt_count} corrupt PDFs")
+    return corrupt_count
+
+
+def validate_index():
+    """Validate the index quality."""
+    logger.info("Step 3/3: Validating index quality...")
+
+    # Check that index directories exist and have content
+    checks = {
+        "BM25 index": config.BM25_DIR / "bm25.pkl",
+        "Vector index": config.CHROMA_DIR,
+        "Chunks file": config.CHUNKS_PATH,
+        "Manifest": config.MANIFEST_PATH,
+    }
+
+    all_ok = True
+    for name, path in checks.items():
+        if path.exists():
+            if path.is_file():
+                size = path.stat().st_size
+                logger.info(f"✓ {name}: {size:,} bytes")
+            else:
+                logger.info(f"✓ {name}: directory exists")
+        else:
+            logger.error(f"✗ {name}: NOT FOUND at {path}")
+            all_ok = False
+
+    return all_ok
+
+
+def complete_reindex():
+    """Execute complete re-indexing workflow."""
+    logger.info("="*70)
+    logger.info("RAG FORMULAIRE - COMPLETE RE-INDEXING")
+    logger.info("="*70)
+
+    try:
+        # Step 1: Cleanup
+        cleanup_corrupt_pdfs()
+
+        # Step 2: Full Ingestion (Download, Parse, Index)
+        logger.info("Step 2/3: Running full ingestion pipeline (Download -> Parse -> Index)...")
+        ingest_pipeline()
+        logger.info("✓ Ingestion pipeline completed")
+
+        # Step 3: Validate
+        if validate_index():
+            logger.info("")
+            logger.info("="*70)
+            logger.info("✓ RE-INDEXING COMPLETED SUCCESSFULLY")
+            logger.info("="*70)
+        else:
+            logger.error("Index validation failed!")
+            raise RuntimeError("Index validation failed")
+
+    except Exception as e:
+        logger.error(f"Re-indexing failed: {e}", exc_info=True)
+        raise
+
+
 if __name__ == "__main__":  # pragma: no cover
-    ingest_pipeline()
+    complete_reindex()
