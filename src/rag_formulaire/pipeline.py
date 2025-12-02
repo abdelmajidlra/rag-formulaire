@@ -90,20 +90,43 @@ class RAGPipeline:
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
+        answer = None
+        oom_occurred = False
+        
         try:
             answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
         except RuntimeError as e:
             if "out of memory" in str(e):
-                logger.warning("OOM detected during generation. Retrying with reduced context.")
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                
-                # Retry with fewer chunks (half)
-                reduced_evidence = evidence_texts[:max(1, len(evidence_texts)//2)]
-                user_prompt = q_fr + "\n\nExtraits (Reduced):\n" + "\n---\n".join(reduced_evidence)
-                answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+                oom_occurred = True
+                logger.warning("OOM detected during generation. Preparing to retry with reduced context.")
             else:
                 raise e
+        
+        # Handle retry outside the except block to ensure 'e' reference is released
+        if oom_occurred:
+            # Force aggressive cleanup
+            import gc
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+            
+            # Retry with drastically reduced context (1/4 of evidence)
+            # If evidence is small, fallback to just the question
+            reduced_len = max(1, len(evidence_texts) // 4)
+            if reduced_len < 1:
+                # Extreme fallback: no evidence, just question (to avoid crash)
+                logger.warning("Extreme OOM fallback: generating without evidence.")
+                user_prompt = q_fr
+            else:
+                reduced_evidence = evidence_texts[:reduced_len]
+                user_prompt = q_fr + "\n\nExtraits (Reduced):\n" + "\n---\n".join(reduced_evidence)
+            
+            try:
+                answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+            except RuntimeError as e:
+                logger.error(f"OOM retry failed: {e}")
+                answer = "Erreur: Mémoire insuffisante pour générer une réponse (OOM)."
 
         # Validation des codes de formulaire (empêche hallucinations)
         if verify_response_against_evidence(answer, reranked):
