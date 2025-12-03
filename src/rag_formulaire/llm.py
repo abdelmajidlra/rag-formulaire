@@ -168,6 +168,12 @@ class LocalLLM:
                 or "Reponse non disponible dans ce mode hors-ligne."
             )
 
+        # Aggressive cleanup before generation
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+
         try:
             return self._run_with_current_model(prompt, max_new_tokens)
         except RuntimeError as exc:  # pragma: no cover - depends on CUDA
@@ -178,6 +184,12 @@ class LocalLLM:
                 "OOM durant la generation avec %s. Passage en mode CPU leger pour terminer.",
                 self.model_name,
             )
+            
+            # Aggressive cleanup after OOM
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+
             # Switch to CPU fallback and retry with fewer tokens to be safe
             self._load_fallback_cpu(reason="CUDA OOM pendant generate()")
 

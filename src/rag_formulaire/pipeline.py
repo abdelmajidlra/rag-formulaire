@@ -87,6 +87,8 @@ class RAGPipeline:
         user_prompt = q_fr + "\n\nExtraits:\n" + "\n---\n".join(evidence_texts)
         
         # Memory cleanup before generation
+        import gc
+        gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
