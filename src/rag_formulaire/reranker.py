@@ -17,7 +17,8 @@ logger = logging.getLogger(__name__)
 class CrossEncoderReranker:
     def __init__(self):
         try:  # pragma: no cover - heavy dependency
-            self.model = CrossEncoder(config.RERANK_MODEL_NAME) if CrossEncoder else None
+            # Force CPU to keep GPU VRAM available for the generator (avoids OOM)
+            self.model = CrossEncoder(config.RERANK_MODEL_NAME, device="cpu") if CrossEncoder else None
         except Exception as exc:  # noqa: BLE001
             logger.warning("Chargement du reranker impossible (%s); utilisation d'un score heuristique.", exc)
             self.model = None
