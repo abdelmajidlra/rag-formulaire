@@ -22,6 +22,13 @@ spec:
               value: "0.0.0.0"
             - name: API_PORT
               value: "8000"
+            - name: RAG_FORM_GEN_ENDPOINT
+              value: "http://ircc-llama:8080"
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
           volumeMounts:
             - name: rag-data
               mountPath: /app/data
@@ -41,3 +48,53 @@ spec:
     - protocol: TCP
       port: 8000
       targetPort: 8000
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ircc-llama
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ircc-llama
+  template:
+    metadata:
+      labels:
+        app: ircc-llama
+    spec:
+      containers:
+        - name: llama-backend
+          image: ghcr.io/huggingface/text-generation-inference:2.1.1
+          env:
+            - name: MODEL_ID
+              value: meta-llama/Llama-3.1-8B-Instruct
+            - name: HUGGING_FACE_HUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hf-token
+                  key: token
+            - name: NUM_SHARD
+              value: "1"
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: hf-cache
+              mountPath: /data
+      volumes:
+        - name: hf-cache
+          persistentVolumeClaim:
+            claimName: hf-cache-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ircc-llama
+spec:
+  selector:
+    app: ircc-llama
+  ports:
+    - protocol: TCP
+      port: 8080
+      targetPort: 80

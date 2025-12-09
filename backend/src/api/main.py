@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.routes import router
 from config.settings import get_settings
+from rag_formulaire import config as rag_config
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -27,4 +28,9 @@ app.include_router(router)
 
 @app.on_event("startup")
 async def log_startup() -> None:
-    logger.info("IRCC RAG API starting with auth=%s", settings.enable_auth)
+    logger.info(
+        "IRCC RAG API starting with auth=%s | model=%s | endpoint=%s",
+        settings.enable_auth,
+        rag_config.GEN_MODEL_NAME,
+        rag_config.GEN_MODEL_ENDPOINT or "embedded",
+    )

@@ -91,3 +91,45 @@ def test_chat_template_used(monkeypatch):
     assert response == "<answer>"
 
     _reset_shared_llm()
+
+
+def test_remote_backend_is_used(monkeypatch):
+    _reset_shared_llm()
+    monkeypatch.setenv("RAG_FORM_GEN_ENDPOINT", "http://llama:8080")
+
+    importlib.reload(config)
+    importlib.reload(llm_module)
+    _reset_shared_llm()
+
+    calls = {}
+
+    class DummyResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):  # noqa: D401
+            return None
+
+        def json(self):  # noqa: D401
+            return self._payload
+
+    def fake_post(url, json=None, headers=None, timeout=None):  # noqa: A002
+        calls["url"] = url
+        calls["json"] = json
+        calls["headers"] = headers
+        calls["timeout"] = timeout
+        return DummyResponse({"generated_text": "bonjour"})
+
+    monkeypatch.setattr(llm_module.requests, "post", fake_post)
+
+    llama = llm_module.LocalLLM()
+    response = llama.chat("system", "user", max_new_tokens=4)
+
+    assert response == "bonjour"
+    assert calls["url"] == "http://llama:8080/generate"
+    assert calls["json"]["parameters"]["max_new_tokens"] == 4
+
+    _reset_shared_llm()
+    monkeypatch.delenv("RAG_FORM_GEN_ENDPOINT", raising=False)
+    importlib.reload(config)
+    importlib.reload(llm_module)
