@@ -1,0 +1,19 @@
+{
+  "name": "ircc-teams-bot",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "start": "ts-node src/index.ts",
+    "build": "tsc -p ."
+  },
+  "dependencies": {
+    "axios": "^1.6.0",
+    "botbuilder": "^4.23.0",
+    "restify": "^11.1.0"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.1",
+    "typescript": "^5.4.0"
+  }
+}
