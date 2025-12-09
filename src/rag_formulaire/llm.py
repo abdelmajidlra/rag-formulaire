@@ -58,6 +58,8 @@ class LocalLLM:
         try:  # pragma: no cover - heavy dependency
             # 1) Load tokenizer
             self.tokenizer = AutoTokenizer.from_pretrained(config.GEN_MODEL_NAME)
+            if self.tokenizer.pad_token_id is None and getattr(self.tokenizer, "eos_token_id", None) is not None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
 
             # 2) Load generation model
             load_kwargs = {
@@ -88,6 +90,25 @@ class LocalLLM:
 
         if self.model is None:
             logger.warning("ATTENTION: Aucun LLM charge. Le systeme ne pourra pas generer de reponses.")
+
+    def _format_prompt(self, system_prompt: str, user_prompt: str) -> str:
+        """Build a chat-formatted prompt, using the tokenizer chat template when available."""
+
+        if self.tokenizer and hasattr(self.tokenizer, "apply_chat_template"):
+            try:
+                messages = [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+                return self.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                )
+            except Exception as exc:  # noqa: BLE001
+                logger.warning("Echec de l'application du chat template: %s", exc)
+
+        return f"{system_prompt}\nUtilisateur: {user_prompt}\nReponse:"
 
     def _load_fallback_cpu(self, reason: str | None = None):
         """Load a small CPU model to avoid GPU OOM or missing deps."""
@@ -205,7 +226,7 @@ class LocalLLM:
 
     # --- API "chat" compatible avec ton code existant -------------------------
     def chat(self, system_prompt: str, user_prompt: str, max_new_tokens: int = 256) -> str:
-        prompt = f"{system_prompt}\nUtilisateur: {user_prompt}\nReponse:"
+        prompt = self._format_prompt(system_prompt, user_prompt)
         return self.generate(prompt, max_new_tokens=max_new_tokens)
 
     # --- Expansion et decomposition restent simples pour le moment ------------

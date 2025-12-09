@@ -77,7 +77,7 @@
 - **Garde-fous CRAG** : Évaluation de la qualité des preuves avant génération
 - **Détection d'Hallucinations** : Validation automatique des codes de formulaire mentionnés
 - **Auto-Réflexion Améliorée** : Le LLM critique ses propres réponses avec 4 points de vérification
-- **LLM Local** : Mistral-7B-Instruct avec quantification 4-bit sur GPU
+- **LLM Local** : Llama-3.1-8B-Instruct avec quantification 4-bit sur GPU
 - **Parsing Avancé** : Docling avec support OCR pour PDF complexes
 - **Singleton Pattern** : Optimisation mémoire GPU (~50% d'économie)
 - **Chunks Optimisés** : 400 tokens avec 80 tokens de chevauchement pour meilleur contexte
@@ -130,7 +130,7 @@ graph TB
     end
     
     subgraph "🤖 PHASE 3: GÉNÉRATION & VALIDATION"
-        K -->|✅ Preuves Fortes| L[🧠 LLM Mistral-7B<br/>llm.py - Singleton]
+        K -->|✅ Preuves Fortes| L[🧠 LLM Llama 3.1 8B<br/>llm.py - Singleton]
         K -->|❌ Preuves Faibles| M[⚠️ Message de Fallback]
         
         L --> N[🔍 Auto-Réflexion<br/>evaluation.py]
@@ -178,7 +178,7 @@ graph TB
 | 🔀 | **Fusion RRF** | Combinaison des résultats BM25 + vecteurs | `retrieval.py` |
 | ⚖️ | **Cross-Encoder Reranker** | Amélioration de la pertinence | `reranker.py` |
 | ✅ | **Évaluation CRAG** | Validation de la qualité des preuves | `evaluation.py` |
-| 🧠 | **LLM Mistral-7B** | Génération de réponses en français | `llm.py` |
+| 🧠 | **LLM Llama 3.1 8B** | Génération de réponses en français | `llm.py` |
 | 🔍 | **Auto-Réflexion** | Vérification de cohérence de la réponse | `evaluation.py` |
 
 ---
@@ -215,7 +215,7 @@ graph TB
 ### Prérequis
 
 - Python 3.10 ou supérieur
-- (Optionnel) GPU CUDA pour Mistral-7B-Instruct
+- (Optionnel) GPU CUDA pour Llama-3.1-8B-Instruct
 - (Optionnel) Module `bitsandbytes` pour quantification 4-bit
 
 ### Installation Standard
@@ -297,7 +297,7 @@ Les paramètres de configuration se trouvent dans `src/rag_formulaire/config.py`
 | `RAG_FORM_STRICT_VERIFICATION` | `false` | Mode strict : vérification n-gram (peut bloquer réponses valides) |
 | `RAG_FORM_CHUNK_SIZE` | `400` | Taille des chunks en tokens (était 200) |
 | `RAG_FORM_CHUNK_OVERLAP` | `80` | Chevauchement entre chunks en tokens (était 30) |
-| `GEN_MODEL_NAME` | `mistralai/Mistral-7B-Instruct-v0.2` | Modèle LLM HuggingFace |
+| `GEN_MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Modèle LLM HuggingFace |
 | `GEN_LOAD_4BIT` | `True` | Quantification 4-bit sur GPU |
 
 **Exemple de configuration personnalisée :**
@@ -369,7 +369,7 @@ rag-formulaire/
 │       ├── retrieval.py           # 🔍 Recherche hybride + filtrage
 │       ├── reranker.py            # ⚖️ Cross-encoder reranking
 │       ├── evaluation.py          # ✅ CRAG + auto-réflexion
-│       ├── llm.py                 # 🧠 LLM Mistral (singleton)
+│       ├── llm.py                 # 🧠 LLM Llama (singleton)
 │       ├── graph_rag.py           # 🕸️ GraphRAG (expérimental)
 │       ├── ingest.py              # 📥 Pipeline d'ingestion
 │       └── cli.py                 # 💬 Interface en ligne de commande
@@ -461,7 +461,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 - **Docling** pour le parsing avancé de PDF
 - **ChromaDB** pour le stockage vectoriel
 - **HuggingFace** pour les modèles et l'écosystème
-- **Mistral AI** pour Mistral-7B-Instruct
+- **Meta** pour la famille Llama 3
 
 ---
 
