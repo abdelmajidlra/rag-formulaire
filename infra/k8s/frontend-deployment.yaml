@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ircc-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ircc-frontend
+  template:
+    metadata:
+      labels:
+        app: ircc-frontend
+    spec:
+      containers:
+        - name: web
+          image: node:20
+          command: ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173"]
+          workingDir: /app
+          env:
+            - name: VITE_API_BASE_URL
+              value: "http://ircc-backend:8000"
+          ports:
+            - containerPort: 5173
+          volumeMounts:
+            - name: web-src
+              mountPath: /app
+      volumes:
+        - name: web-src
+          persistentVolumeClaim:
+            claimName: web-src-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ircc-frontend
+spec:
+  selector:
+    app: ircc-frontend
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 5173

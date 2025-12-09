@@ -32,6 +32,37 @@
 
 **RAG Formulaire** est une preuve de concept de système RAG (Retrieval-Augmented Generation) conçu pour interroger intelligemment les formulaires d'Immigration, Réfugiés et Citoyenneté Canada (IRCC) en français.
 
+### Architecture monorepo (enterprise-ready)
+
+- **Backend API** : FastAPI dans `backend/` qui enveloppe le module `rag_formulaire` existant.
+- **Portail Web** : SPA React/Vite dans `frontend/web-portal` pour l'usage intranet.
+- **Bot Teams** : Scaffold Bot Framework dans `frontend/teams-bot` pour Microsoft Teams.
+- **Infra & Ops** : Docker, docker-compose et manifests Kubernetes dans `infra/`, scripts d'indexation dans `infra/scripts`.
+- **Docs** : Architecture, sécurité et opérations dans `docs/`.
+
+### Démarrage rapide (local)
+
+1. **Construire les index** : `python infra/scripts/init_indexes.py`
+2. **API** :
+   ```bash
+   cd backend
+   pip install -r requirements.txt
+   uvicorn api.main:app --reload
+   ```
+3. **Front web** :
+   ```bash
+   cd frontend/web-portal
+   npm install
+   npm run dev
+   ```
+   puis ouvrir http://localhost:5173 (configurer `VITE_API_BASE_URL`).
+4. **Stack complète** : `cd infra && docker-compose up --build`
+
+### Tests
+
+- Backend : `PYTHONPATH=backend/src:src pytest backend/tests`
+- Front (placeholder lint) : `npm run lint` dans `frontend/web-portal`.
+
 ### Cas d'utilisation
 
 - 🔍 **Recherche de formulaires** : "Quel formulaire utiliser pour un permis de travail ?"
