@@ -86,81 +86,38 @@
 
 ## 🏗️ Architecture du Système
 
-Le pipeline RAG est composé de plusieurs modules interconnectés, organisés en trois phases principales : **Ingestion**, **Récupération**, et **Génération**.
+Le pipeline RAG est organisé autour de trois flux connectés : ingestion des données PDF, récupération hybride, puis génération validée par LLaMA. Les interactions front/back sont incluses pour visualiser la chaîne complète.
 
 ```mermaid
-graph TB
-    subgraph "📥 PHASE 1: INGESTION DES DONNÉES"
-        A[🌐 Web Crawler<br/>downloader.py] -->|Formulaires PDF| B[📄 Parser Docling<br/>parser_docling.py]
-        B -->|Texte + Métadonnées| C[✂️ Chunking Contextuel<br/>chunking.py]
-        C -->|Chunks enrichis| D[🗂️ Indexation]
-        
-        subgraph D[🗂️ Indexation - indexing.py]
-            D1[📊 Index BM25<br/>Recherche Lexicale]
-            D2[🧠 Index Vectoriel<br/>ChromaDB + Embeddings]
-        end
-        
-        C --> D1
-        C --> D2
+flowchart TD
+    subgraph Ingestion[📥 Phase 1 · Ingestion]
+        DL[Web crawler<br/>downloader.py] --> PD[Parser Docling<br/>parser_docling.py]
+        PD --> CH[Chunking contextuel<br/>chunking.py]
+        CH --> BM[BM25]
+        CH --> VE[ChromaDB vecteur]
     end
-    
-    subgraph "🔍 PHASE 2: RÉCUPÉRATION & RERANKING"
-        E[❓ Question Utilisateur] --> F[🌍 Handler Multilingue<br/>query_processing.py]
-        F -->|Question normalisée| G{🎯 Routeur Agentique}
-        
-        G -->|DIRECT| H[🔎 Retrieval Hybride]
-        G -->|MULTI_STEP| I[📋 Décomposition]
-        I --> H
-        
-        subgraph H[🔎 Retrieval Hybride - retrieval.py]
-            H1[🔍 Détection Code Formulaire<br/>ex: IMM 5476]
-            H2[📊 Recherche BM25<br/>+ Filtrage]
-            H3[🧠 Recherche Vectorielle<br/>+ Filtrage Metadata]
-            H4[🔀 Fusion RRF<br/>Reciprocal Rank Fusion]
-        end
-        
-        H --> H1
-        H1 --> H2
-        H1 --> H3
-        H2 --> H4
-        H3 --> H4
-        
-        H4 --> J[⚖️ Cross-Encoder Reranker<br/>reranker.py]
-        J -->|Top-K chunks| K{✅ Évaluation CRAG<br/>evaluation.py}
+
+    subgraph Front[🌐 Frontend]
+        User[Utilisateur] --> Portal[Web intranet / Bot Teams]
     end
-    
-    subgraph "🤖 PHASE 3: GÉNÉRATION & VALIDATION"
-        K -->|✅ Preuves Fortes| L[🧠 LLM Llama 3.1 8B<br/>llm.py - Singleton]
-        K -->|❌ Preuves Faibles| M[⚠️ Message de Fallback]
-        
-        L --> N[🔍 Auto-Réflexion<br/>evaluation.py]
-        N --> O[📝 Réponse Finale<br/>+ Sources + Disclaimer]
-        M --> O
+
+    subgraph API[🛰️ Backend FastAPI]
+        Portal -->|HTTP JSON| Ask[/POST /ask/]
+        Ask --> Prep[Pré-traitement + détection langue<br/>query_processing.py]
+        Prep --> Rt[Retrieval hybride<br/>retrieval.py]
+        Rt --> Rerank[Cross-encoder<br/>reranker.py]
+        Rerank --> Guard[CRAG + filtrage<br/>evaluation.py]
     end
-    
-    O --> P[👤 Utilisateur]
-    
-    style A fill:#e1f5ff
-    style B fill:#e1f5ff
-    style C fill:#e1f5ff
-    style D1 fill:#fff3cd
-    style D2 fill:#fff3cd
-    style F fill:#d4edda
-    style G fill:#d4edda
-    style H1 fill:#cfe2ff
-    style H2 fill:#cfe2ff
-    style H3 fill:#cfe2ff
-    style H4 fill:#cfe2ff
-    style J fill:#f8d7da
-    style K fill:#f8d7da
-    style L fill:#e2e3e5
-    style N fill:#e2e3e5
-    style O fill:#d1ecf1
-    
-    classDef phaseStyle stroke:#333,stroke-width:2px
-    class A,B,C,D1,D2 phaseStyle
-    class F,G,H1,H2,H3,H4,J,K phaseStyle
-    class L,N,O phaseStyle
+
+    subgraph Generation[🤖 Phase 3 · Génération]
+        Guard -->|preuves OK| LLM[LLaMA 3.x<br/>llm.py]
+        Guard -->|preuves faibles| Fallback[Message neutre]
+        LLM --> Reflexion[Auto-réflexion + validations<br/>evaluation.py]
+    end
+
+    BM & VE --> Rt
+    Reflexion --> Portal
+    Fallback --> Portal
 ```
 
 ### Légende des Composants
@@ -215,8 +172,9 @@ graph TB
 ### Prérequis
 
 - Python 3.10 ou supérieur
-- (Optionnel) GPU CUDA pour Llama-3.1-8B-Instruct
+- GPU avec ≥14 GB VRAM recommandé pour Llama-3.x 8B (T4/A10/A100) ou endpoint TGI/Ollama déjà provisionné
 - (Optionnel) Module `bitsandbytes` pour quantification 4-bit
+- Token Hugging Face si vous chargez un modèle LLaMA privé (`HF_TOKEN`/`HUGGING_FACE_HUB_TOKEN`)
 
 ### Installation Standard
 
@@ -236,6 +194,13 @@ pip install -e .
 pip install -e .
 pip install bitsandbytes
 ```
+
+### 🦙 Préparer LLaMA (local ou endpoint)
+
+- **Chargement local (par défaut)** : le backend charge `meta-llama/Llama-3.1-8B-Instruct` en 4-bit si une GPU est disponible. Assurez-vous d'avoir au moins ~14 GB de VRAM.
+- **Endpoint distant** : définissez `RAG_FORM_GEN_ENDPOINT` vers un service TGI/Ollama (ex: `http://llama:8080`) pour déporter l'inférence. L'API ne chargera pas le modèle localement.
+- **Token HF** : exportez `HF_TOKEN` ou `HUGGING_FACE_HUB_TOKEN` pour les modèles gated avant tout `docker-compose` ou lancement local.
+- **Tuning** : ajustez `RAG_FORM_GEN_MAX_NEW_TOKENS` pour contrôler la longueur des réponses.
 
 ---
 
@@ -282,6 +247,27 @@ print(result["answer"])
 print(result["sources"])
 ```
 
+### 3. Backend + Frontend avec LLaMA
+
+- **Option 1 · Docker Compose complet (API + LLaMA + Web)**
+  ```bash
+  cd infra
+  export HF_TOKEN=hf_...   # requis pour télécharger le modèle privé
+  docker-compose up --build
+  ```
+  - L'API pointe par défaut vers le service TGI `llama` (`RAG_FORM_GEN_ENDPOINT=http://llama:8080`).
+  - Le portail est disponible sur http://localhost:5173 (variable `VITE_API_BASE_URL` injectée par docker-compose).
+
+- **Option 2 · API locale avec endpoint distant**
+  ```bash
+  export RAG_FORM_GEN_ENDPOINT="http://llama-host:8080"   # TGI/Ollama ou autre
+  export HF_TOKEN=hf_...                                    # si le modèle est privé côté endpoint
+  cd backend
+  pip install -r requirements.txt
+  PYTHONPATH=../src uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+  ```
+  Puis dans `frontend/web-portal`, configurez `VITE_API_BASE_URL=http://localhost:8000` et lancez `npm run dev`.
+
 ---
 
 ## ⚙️ Configuration
@@ -292,13 +278,14 @@ Les paramètres de configuration se trouvent dans `src/rag_formulaire/config.py`
 |----------|--------|-------------|
 | `RAG_FORM_BASE_DIR` | `.` | Répertoire racine pour les données |
 | `RAG_FORM_MIN_FORMS` | `40` | Nombre minimum de formulaires à télécharger |
-| `RAG_FORM_MAX_SYNTH` | `0` | Nombre de formulaires synthétiques (désactivé) |
 | `RAG_FORM_ENABLE_GRAPHRAG` | `false` | Activer GraphRAG (expérimental) |
 | `RAG_FORM_STRICT_VERIFICATION` | `false` | Mode strict : vérification n-gram (peut bloquer réponses valides) |
-| `RAG_FORM_CHUNK_SIZE` | `400` | Taille des chunks en tokens (était 200) |
-| `RAG_FORM_CHUNK_OVERLAP` | `80` | Chevauchement entre chunks en tokens (était 30) |
-| `GEN_MODEL_NAME` | `meta-llama/Llama-3.1-8B-Instruct` | Modèle LLM HuggingFace |
-| `GEN_LOAD_4BIT` | `True` | Quantification 4-bit sur GPU |
+| `RAG_FORM_CHUNK_SIZE` | `400` | Taille des chunks en tokens |
+| `RAG_FORM_CHUNK_OVERLAP` | `80` | Chevauchement entre chunks en tokens |
+| `RAG_FORM_GEN_MODEL` | `meta-llama/Llama-3.1-8B-Instruct` | Modèle LLaMA (chargé localement si aucun endpoint n'est fourni) |
+| `RAG_FORM_GEN_4BIT` | `true` | Activer la quantification 4-bit lors du chargement local |
+| `RAG_FORM_GEN_ENDPOINT` | _vide_ | URL TGI/Ollama pour déléguer la génération LLaMA |
+| `RAG_FORM_GEN_MAX_NEW_TOKENS` | `256` | Longueur maximale des réponses générées |
 
 **Exemple de configuration personnalisée :**
 
@@ -312,16 +299,15 @@ python -m rag_formulaire.ingest
 
 ## 🔬 Utilisation Avancée
 
-### Notebook Colab
+### Notebook LLaMA
 
-Un notebook optimisé pour Google Colab (GPU T4) est disponible dans `notebooks/colab-ircc-rag-poc.ipynb`.
+- `notebooks/ircc-rag-llama.ipynb` : parcours complet local pour ingestion + retrieval + génération LLaMA 3.x (mode endpoint ou chargement local).
+- `notebooks/colab-ircc-rag-poc.ipynb` : variante Colab (GPU T4) pour les essais rapides.
 
-**Fonctionnalités du notebook :**
-- Configuration automatique du dépôt
-- Installation des dépendances
-- Construction de l'index avec quota réduit (30 formulaires)
-- Tests interactifs avec affichage formaté
-- Gestion mémoire GPU optimisée
+**Étapes clés :**
+1. Installer les dépendances (`pip install -e .` + `bitsandbytes` si GPU disponible).
+2. Exporter `RAG_FORM_GEN_MODEL`, `RAG_FORM_GEN_ENDPOINT` (si vous utilisez TGI/Ollama) et `HF_TOKEN`/`HUGGING_FACE_HUB_TOKEN` pour les modèles gated.
+3. Lancer les cellules d'ingestion, puis les cellules de questions pour valider la génération.
 
 ### Intégration dans une Application
 
@@ -374,6 +360,7 @@ rag-formulaire/
 │       ├── ingest.py              # 📥 Pipeline d'ingestion
 │       └── cli.py                 # 💬 Interface en ligne de commande
 ├── notebooks/
+│   ├── ircc-rag-llama.ipynb      # 📓 Notebook local complet LLaMA
 │   └── colab-ircc-rag-poc.ipynb  # 📓 Notebook Colab optimisé
 ├── tests/                         # 🧪 Tests unitaires
 ├── data/                          # 📂 Données générées (ignoré par git)
@@ -388,24 +375,20 @@ rag-formulaire/
 
 ## 🧪 Tests
 
-Exécutez les tests unitaires avec pytest :
+Exécutez les tests unitaires et validations principales :
 
 ```bash
-# Tous les tests
+# Librairie coeur (ingestion/retrieval/génération)
 pytest
 
-# Avec couverture de code
-pytest --cov=rag_formulaire --cov-report=html
+# API FastAPI
+PYTHONPATH=backend/src:src pytest backend/tests
 
-# Tests spécifiques
-pytest tests/test_downloader.py -v
+# Portail web
+(cd frontend/web-portal && npm run lint)
 ```
 
-**Couverture actuelle :**
-- Tests de téléchargement avec formulaires factices
-- Tests de parsing et chunking
-- Tests d'indexation et récupération
-- Tests de garde-fous CRAG
+Pensez à régénérer les index (`python -m rag_formulaire.ingest`) avant de lancer des tests qui dépendent des données.
 
 ---
 
