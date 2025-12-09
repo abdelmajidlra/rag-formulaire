@@ -8,11 +8,16 @@ services:
     environment:
       - API_HOST=0.0.0.0
       - API_PORT=8000
+      - RAG_FORM_GEN_ENDPOINT=http://llama:8080
+      - HF_TOKEN=${HF_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:
       - ../data:/app/data
+      - ../.cache/huggingface:/root/.cache/huggingface
     restart: unless-stopped
+    depends_on:
+      - llama
 
   web:
     image: node:20
@@ -26,3 +31,15 @@ services:
       - ../frontend/web-portal:/app
     depends_on:
       - api
+
+  llama:
+    image: ghcr.io/huggingface/text-generation-inference:2.1.1
+    environment:
+      - MODEL_ID=meta-llama/Llama-3.1-8B-Instruct
+      - HUGGING_FACE_HUB_TOKEN=${HF_TOKEN:-}
+      - NUM_SHARD=1
+    ports:
+      - "8080:80"
+    volumes:
+      - ../.cache/huggingface:/data
+    restart: unless-stopped

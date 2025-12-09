@@ -23,6 +23,7 @@ Variables principales (via `.env` ou variables d'environnement) :
 - `API_HOST`, `API_PORT`
 - `ALLOWED_ORIGINS`
 - `RAG_INDEX_PATH`, `RAG_DATA_PATH`, `LLM_MODEL_PATH`
+- `RAG_FORM_GEN_ENDPOINT` (pour utiliser un backend LLaMA externe)
 - `ENABLE_AUTH` (bool)
 - `AZURE_AD_TENANT_ID`, `AZURE_AD_CLIENT_ID`, `AZURE_AD_API_AUDIENCE`
 

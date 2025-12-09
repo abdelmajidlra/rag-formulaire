@@ -4,6 +4,8 @@ import logging
 import os
 from typing import List
 
+import requests
+
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 
@@ -34,6 +36,18 @@ class LocalLLM:
         self.model_name = None
         self._fallback_loaded = False
 
+        self.remote_endpoint = config.GEN_MODEL_ENDPOINT
+        if self.remote_endpoint:
+            self.device = "remote"
+            self.model_name = config.GEN_MODEL_NAME
+            logger.info(
+                "Délégation de la génération LLaMA au backend %s (modèle %s)",
+                self.remote_endpoint,
+                self.model_name,
+            )
+            self._prepare_tokenizer()
+            return
+
         # Detect GPU or fallback to CPU
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         logger.info("Initialisation LLM sur device=%s", self.device)
@@ -56,12 +70,9 @@ class LocalLLM:
                 quant_config = None
 
         try:  # pragma: no cover - heavy dependency
-            # 1) Load tokenizer
-            self.tokenizer = AutoTokenizer.from_pretrained(config.GEN_MODEL_NAME)
-            if self.tokenizer.pad_token_id is None and getattr(self.tokenizer, "eos_token_id", None) is not None:
-                self.tokenizer.pad_token = self.tokenizer.eos_token
+            self._prepare_tokenizer()
 
-            # 2) Load generation model
+            # 2) Load generation model locally
             load_kwargs = {
                 "device_map": "auto" if self.device == "cuda" else None,
                 "torch_dtype": torch.float16 if self.device == "cuda" else torch.float32,
@@ -109,6 +120,17 @@ class LocalLLM:
                 logger.warning("Echec de l'application du chat template: %s", exc)
 
         return f"{system_prompt}\nUtilisateur: {user_prompt}\nReponse:"
+
+    def _prepare_tokenizer(self) -> None:
+        """Load tokenizer safely for both remote and local modes."""
+
+        try:
+            self.tokenizer = AutoTokenizer.from_pretrained(config.GEN_MODEL_NAME)
+            if self.tokenizer.pad_token_id is None and getattr(self.tokenizer, "eos_token_id", None) is not None:
+                self.tokenizer.pad_token = self.tokenizer.eos_token
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Impossible de charger le tokenizer pour %s: %s", config.GEN_MODEL_NAME, exc)
+            self.tokenizer = None
 
     def _load_fallback_cpu(self, reason: str | None = None):
         """Load a small CPU model to avoid GPU OOM or missing deps."""
@@ -180,8 +202,51 @@ class LocalLLM:
         # Remove the prompt to keep only the answer
         return full_text[len(prompt):].strip()
 
+    def _call_remote(self, prompt: str, max_new_tokens: int) -> str:
+        """Delegate generation to a remote TGI-compatible endpoint."""
+
+        headers = {}
+        token = os.getenv("HF_TOKEN") or os.getenv("HUGGING_FACE_HUB_TOKEN")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+
+        payload = {
+            "inputs": prompt,
+            "parameters": {
+                "max_new_tokens": max_new_tokens,
+                "temperature": 0.1,
+                "repetition_penalty": 1.2,
+                "return_full_text": False,
+            },
+        }
+
+        endpoint = self.remote_endpoint.rstrip("/") + "/generate"
+        logger.info("Appel du backend LLaMA distant: %s", endpoint)
+        response = requests.post(endpoint, json=payload, headers=headers, timeout=180)
+        response.raise_for_status()
+        body = response.json()
+
+        if isinstance(body, dict) and "generated_text" in body:
+            return body["generated_text"].strip()
+        if isinstance(body, dict) and body.get("results"):
+            return (body["results"][0].get("generated_text") or "").strip()
+
+        raise RuntimeError(f"Réponse invalide du backend LLaMA ({body})")
+
     # --- Generation principale -------------------------------------------------
     def generate(self, prompt: str, max_new_tokens: int = 256) -> str:
+        if self.remote_endpoint:
+            try:
+                return self._call_remote(prompt, max_new_tokens)
+            except Exception as exc:  # noqa: BLE001
+                logger.error(
+                    "Echec du backend LLaMA distant (%s). Bascule vers un modele local de repli.",
+                    exc,
+                )
+                self.remote_endpoint = None
+                if self.model is None and not self._fallback_loaded:
+                    self._load_fallback_cpu(reason="backend distant indisponible")
+
         # Fallback mode: no usable model
         if self.model is None or self.tokenizer is None:
             return (

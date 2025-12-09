@@ -96,7 +96,7 @@ After re-indexing, run your evaluation notebook:
 
 ### If getting "Réponse non disponible dans ce mode hors-ligne":
 
-1. **Cause:** The main model (Mistral 7B) failed to load (likely Out Of Memory on CPU).
+1. **Cause:** The main model (Llama 3.1 8B) failed to load (likely Out Of Memory on CPU).
 2. **Fix:** The system now automatically falls back to **TinyLlama 1.1B**.
 3. **Verify:** Check logs for "Modèle de repli chargé avec succès!".
 4. **Manual Override:** You can force a smaller model by setting the environment variable:
