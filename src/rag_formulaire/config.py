@@ -23,14 +23,17 @@ GEN_MODEL_NAME = os.getenv("RAG_FORM_GEN_MODEL", "mistralai/Mistral-7B-Instruct-
 # Chargement 4 bits facultatif pour tenir sur des GPUs type Tesla (désactivé si non disponible)
 GEN_LOAD_4BIT = os.getenv("RAG_FORM_GEN_4BIT", "true").lower() == "true"
 
-# Retrieval params
+# Retrieval params (tunable via env for constrained GPU like Colab T4)
 BM25_K1 = 1.5
 BM25_B = 0.75
-BM25_TOP_K = 25
-VECTOR_TOP_K = 30
-RERANK_TOP_N = 12
-FINAL_EVIDENCE_K = 6
-RRF_K = 60
+BM25_TOP_K = int(os.getenv("RAG_FORM_BM25_TOP_K", "25"))
+VECTOR_TOP_K = int(os.getenv("RAG_FORM_VECTOR_TOP_K", "30"))
+RERANK_TOP_N = int(os.getenv("RAG_FORM_RERANK_TOP_N", "12"))
+FINAL_EVIDENCE_K = int(os.getenv("RAG_FORM_FINAL_EVIDENCE_K", "6"))
+RRF_K = int(os.getenv("RAG_FORM_RRF_K", "60"))
+
+# Generation params
+GEN_MAX_NEW_TOKENS = int(os.getenv("RAG_FORM_GEN_MAX_NEW_TOKENS", "256"))
 
 # Gating thresholds
 CRAG_MIN_SCORE = 0.05
