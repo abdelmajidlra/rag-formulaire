@@ -96,7 +96,7 @@ class RAGPipeline:
         oom_occurred = False
         
         try:
-            answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+            answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=config.GEN_MAX_NEW_TOKENS)
         except RuntimeError as e:
             if "out of memory" in str(e):
                 oom_occurred = True
@@ -125,7 +125,7 @@ class RAGPipeline:
                 user_prompt = q_fr + "\n\nExtraits (Reduced):\n" + "\n---\n".join(reduced_evidence)
             
             try:
-                answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+                answer = self.llm.chat(system_prompt, user_prompt, max_new_tokens=config.GEN_MAX_NEW_TOKENS)
             except RuntimeError as e:
                 logger.error(f"OOM retry failed: {e}")
                 answer = "Erreur: Mémoire insuffisante pour générer une réponse (OOM)."

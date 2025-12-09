@@ -69,7 +69,7 @@ def run_cli():  # pragma: no cover - interactive
             "Citez clairement le code du formulaire et la section/page d'où provient l'information."
         )
         user_prompt = q_fr + "\nExtraits:\n" + "\n".join(evidence_texts)
-        answer = llm.chat(system_prompt, user_prompt, max_new_tokens=256)
+        answer = llm.chat(system_prompt, user_prompt, max_new_tokens=config.GEN_MAX_NEW_TOKENS)
 
         if not verify_response_against_evidence(answer, reranked):
             answer = evaluator.fallback_message()

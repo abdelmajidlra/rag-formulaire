@@ -62,7 +62,10 @@ class AdvancedSelfReflector:
             "Réponds au format: CONFIANCE: <score>\nExplication: <raison>"
         )
         
-        critique = self.llm.generate(prompt, max_new_tokens=200)
+        critique = self.llm.generate(
+            prompt,
+            max_new_tokens=min(config.GEN_MAX_NEW_TOKENS, 200),
+        )
         
         # Extract confidence score from critique
         confidence_match = re.search(r'CONFIANCE:\s*([0-9]*\.?[0-9]+)', critique, re.IGNORECASE)
