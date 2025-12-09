@@ -25,7 +25,7 @@ def _extract_forms(answer: str, evidence: List[Any]) -> List[str]:
     for chunk in evidence:
         code = getattr(chunk.base_chunk, "form_code", None)
         if code:
-            codes.add(code.upper())
+            codes.add(code.replace(" ", "").upper())
     return sorted(codes)
 
 

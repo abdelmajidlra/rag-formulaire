@@ -18,8 +18,8 @@ CHUNKS_PATH = DATA_DIR / "chunks.jsonl"
 # Model configuration
 EMBEDDING_MODEL_NAME = os.getenv("RAG_FORM_EMBED_MODEL", "intfloat/multilingual-e5-base")
 RERANK_MODEL_NAME = os.getenv("RAG_FORM_RERANK_MODEL", "BAAI/bge-reranker-large")
-# Mistral 7B reste la cible par défaut, compatible GPU/CPU et quantification légère
-GEN_MODEL_NAME = os.getenv("RAG_FORM_GEN_MODEL", "mistralai/Mistral-7B-Instruct-v0.2")
+# Llama 3.1 8B Instruct est le modèle par défaut (meilleure compréhension des instructions)
+GEN_MODEL_NAME = os.getenv("RAG_FORM_GEN_MODEL", "meta-llama/Llama-3.1-8B-Instruct")
 # Chargement 4 bits facultatif pour tenir sur des GPUs type Tesla (désactivé si non disponible)
 GEN_LOAD_4BIT = os.getenv("RAG_FORM_GEN_4BIT", "true").lower() == "true"
 
